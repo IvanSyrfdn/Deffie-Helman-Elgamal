@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pengiriman nilai dan KRS terenkripsi</title>
+<style>
+:root{--bg:#eef1f6;--panel:#fff;--ink:#1b2433;--mute:#5b6678;--line:#c9d1de;--teal:#0f6b6b;--amber:#9a5b00;--btn-ink:#fff;--bad:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#141a24;--panel:#1b2332;--ink:#e6ebf3;--mute:#9aa6b8;--line:#2c374a;--teal:#4fc3c3;--amber:#f0b45a;--btn-ink:#0b1a1a;--bad:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 28px;max-width:62ch}
+section{background:var(--panel);border-left:4px solid var(--teal);padding:18px 20px;margin-bottom:24px}
+section.cipher{border-left-color:var(--amber)}
+h2{font-size:1.05rem;margin:0 0 6px}
+.note{color:var(--mute);font-size:.9rem;margin:0 0 12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+select,button,textarea{font:inherit}
+select{background:var(--bg);color:var(--ink);border:1px solid var(--line);padding:9px 10px}
+button{background:var(--teal);color:var(--btn-ink);border:0;padding:10px 16px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+button:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+textarea{width:100%;min-height:120px;margin-bottom:10px;font:.85rem/1.4 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);padding:10px}
+details{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+summary{cursor:pointer;font-weight:600}
+.lines p{margin:6px 0 0;font:.8rem/1.45 ui-monospace,Consolas,monospace;word-break:break-all;color:var(--mute)}
+.ok{color:var(--teal);font-weight:600;margin:12px 0 0}.err{color:var(--bad);font-weight:600;margin:12px 0 0}
+.out{white-space:pre-wrap;font:.9rem/1.4 ui-monospace,Consolas,monospace;margin:12px 0 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Pengiriman nilai dan KRS terenkripsi</h1>
+<p class="sub">BAAK mengirim data akademik ke penerima (dosen wali atau mahasiswa). Diffie-Hellman menyepakati kunci sesi, ElGamal mengenkripsi isi data. Setiap langkah perhitungan ditampilkan.</p>
+
+<section>
+  <h2>Langkah 1: buat kunci</h2>
+  <p class="note">Pakai 16-bit agar angkanya mudah dicek dengan kalkulator. Ukuran 64 dan 256-bit lebih mendekati kondisi nyata.</p>
+  <div class="row">
+    <label for="bits">Ukuran bilangan prima</label>
+    <select id="bits"><option value="16">16-bit (demo)</option><option value="64">64-bit</option><option value="256">256-bit</option></select>
+    <button id="btnKey">Buat kunci</button>
+  </div>
+  <div id="keyInfo"></div>
+</section>
+
+<section>
+  <h2>Langkah 2: enkripsi data</h2>
+  <textarea id="plainIn" aria-label="Data nilai atau KRS">NRP: 5025210001
+Nama: Budi Santoso
+KRS: Kriptografi (3 SKS)
+Nilai: A</textarea>
+  <button id="btnEnc">Enkripsi</button>
+  <div id="encInfo"></div>
+</section>
+
+<section class="cipher">
+  <h2>Langkah 3: dekripsi</h2>
+  <p class="note">Ciphertext di bawah ini yang terlihat oleh penyadap. Coba ubah satu angkanya lalu dekripsi.</p>
+  <textarea id="cipherIn" aria-label="Ciphertext" placeholder="Ciphertext muncul di sini setelah enkripsi"></textarea>
+  <button id="btnDec">Dekripsi</button>
+  <div id="decInfo"></div>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Terjadi kesalahan');
+  return d;
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function show(box, msg, cls, steps, finalText) {
+  box.replaceChildren(el('p', cls, msg));
+  if (finalText !== undefined) box.append(el('pre', 'out', finalText));
+  (steps || []).forEach(([title, lines]) => {
+    const d = el('details'); d.open = true;
+    d.append(el('summary', '', title));
+    const w = el('div', 'lines'); lines.forEach(l => w.append(el('p', '', l))); d.append(w);
+    box.append(d);
+  });
+}
+async function run(btn, box, fn) {
+  btn.disabled = true;
+  try { await fn(); } catch (e) { box.replaceChildren(el('p', 'err', e.message)); } finally { btn.disabled = false; }
+}
+$('btnKey').onclick = () => run($('btnKey'), $('keyInfo'), async () => {
+  $('keyInfo').replaceChildren(el('p', 'note', 'Mencari bilangan prima aman...'));
+  const d = await post('/api/setup', {bits: Number($('bits').value)});
+  show($('keyInfo'), 'Kunci berhasil dibuat', 'ok', d.steps);
+});
+$('btnEnc').onclick = () => run($('btnEnc'), $('encInfo'), async () => {
+  const d = await post('/api/encrypt', {text: $('plainIn').value});
+  show($('encInfo'), 'Enkripsi selesai', 'ok', d.steps);
+  $('cipherIn').value = d.cipher; $('decInfo').replaceChildren();
+});
+$('btnDec').onclick = () => run($('btnDec'), $('decInfo'), async () => {
+  const d = await post('/api/decrypt', {cipher: $('cipherIn').value});
+  show($('decInfo'), 'Berhasil didekripsi', 'ok', d.steps, d.text);
+});
+</script>
+</body>
+</html>
